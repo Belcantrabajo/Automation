@@ -1,0 +1,23 @@
+---
+- name: Ensure system is up to date
+  ansible.builtin.apt:
+    update_cache: yes
+    upgrade: dist
+    cache_valid_time: "{{ apt_cache_valid_time }}"
+  when: ansible_os_family == "Debian"
+
+- name: Set hostname
+  ansible.builtin.hostname:
+    name: "{{ inventory_hostname }}"
+
+- name: Ensure common packages are installed
+  ansible.builtin.package:
+    name:
+      - curl
+      - wget
+      - git
+      - htop
+      - tmux
+      - vim
+      - tree
+    state: present

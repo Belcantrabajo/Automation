@@ -1,0 +1,9 @@
+---
+# Global variables applied to all hosts
+ansible_python_interpreter: /usr/bin/python3
+
+# Timezone
+ntp_timezone: America/Argentina/Buenos_Aires
+
+# Repo & update
+apt_cache_valid_time: 3600

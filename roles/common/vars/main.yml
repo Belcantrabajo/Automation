@@ -1,0 +1,3 @@
+---
+# Role variables (higher priority than defaults)
+# Override in group_vars/ or host_vars/ as needed

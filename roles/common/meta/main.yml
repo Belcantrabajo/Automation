@@ -1,0 +1,12 @@
+---
+dependencies: []
+# galaxy_info:
+#   author: Hermes
+#   description: Common bootstrap role
+#   company: your-company
+#   license: MIT
+#   platforms:
+#     - name: Ubuntu
+#       versions:
+#         - focal
+#         - jammy

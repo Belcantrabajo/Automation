@@ -1,0 +1,6 @@
+---
+# Handlers for common role
+# - name: restart service
+#   ansible.builtin.service:
+#     name: "{{ item }}"
+#     state: restarted

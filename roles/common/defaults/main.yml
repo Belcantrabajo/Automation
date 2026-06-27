@@ -1,0 +1,3 @@
+---
+# Default low-priority variables for the common role
+common_packages: []

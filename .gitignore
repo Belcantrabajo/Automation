@@ -1,0 +1,28 @@
+# Ansible
+*.retry
+.cache/
+*.vault
+
+# Secrets / Vault
+# Vault-encrypted files are handled by ansible-vault skill
+# Plaintext secrets NEVER committed
+
+# OS
+.DS_Store
+Thumbs.db
+.*.swp
+*.pyc
+__pycache__/
+
+# OpenCode / Hermes (local AI config)
+.atl/
+.hermes/
+
+# Editor
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Logs
+*.log

@@ -1,0 +1,6 @@
+---
+- name: Bootstrap all nodes
+  hosts: all
+  gather_facts: yes
+  roles:
+    - common
