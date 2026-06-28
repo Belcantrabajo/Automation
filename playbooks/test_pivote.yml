@@ -1,0 +1,74 @@
+# test_pivote.yml
+- name: Test acceso vCenter nuevo + Guest Operations
+  hosts: localhost
+  gather_facts: true
+  vars_files:
+    - vault/credentials.yml
+    - vars/vcenter_vars.yml
+  vars:
+    test_datacenter: "CERRITO"          # <-- nombre del DC en el vCenter NUEVO
+    test_vm_name: "RHEL-9.8"    # <-- VM existente con VMware Tools corriendo
+    local_payload: /home/ansible/prueba.txt
+    local_fetch:   /home/ansible/prueba_recuperada.txt
+    guest_dest:    /tmp/prueba_pivote.txt
+
+  tasks:
+    - name: Smoke test de conexión a vCenter
+      community.vmware.vmware_about_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+      register: vc_about
+
+    - name: Mostrar versión del vCenter
+      debug:
+        msg: "Conectado a {{ vc_about }}"
+
+    - name: Crear archivo de prueba local
+      copy:
+        content: "prueba pivote {{ ansible_date_time.iso8601 }}\n"
+        dest: "{{ local_payload }}"
+
+    - name: Subir archivo a la guest (copy)
+      community.vmware.vmware_guest_file_operation:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        datacenter: "{{ test_datacenter }}"
+        vm_id: "{{ test_vm_name }}"
+        vm_id_type: vm_name
+        vm_username: "{{ guest_user }}"
+        vm_password: "{{ guest_password }}"
+        copy:
+          src: "{{ local_payload }}"
+          dest: "{{ guest_dest }}"
+          overwrite: true
+      no_log: true
+
+    - name: Bajar el mismo archivo desde la guest (fetch)
+      community.vmware.vmware_guest_file_operation:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        datacenter: "{{ test_datacenter }}"
+        vm_id: "{{ test_vm_name }}"
+        vm_id_type: vm_name
+        vm_username: "{{ guest_user }}"
+        vm_password: "{{ guest_password }}"
+        fetch:
+          src: "{{ guest_dest }}"
+          dest: "{{ local_fetch }}"
+      no_log: true
+
+    - name: Verificar que subida y bajada coinciden
+      command: diff "{{ local_payload }}" "{{ local_fetch }}"
+      changed_when: false
+      register: diff_result
+      failed_when: diff_result.rc != 0
+
+    - name: Resultado
+      debug:
+        msg: "Round-trip OK — el canal de Guest Operations funciona en ambas direcciones."

@@ -1,0 +1,7 @@
+---
+# vcenter_vars.yml — variables no sensibles con referencias al vault
+vcenter_hostname: "{{ vault_vcenter_hostname }}"
+vcenter_username: "{{ vault_vcenter_username }}"
+vcenter_password: "{{ vault_vcenter_password }}"
+guest_user: "{{ vault_guest_user }}"
+guest_password: "{{ vault_guest_password }}"

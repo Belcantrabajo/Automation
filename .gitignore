@@ -3,6 +3,13 @@
 .cache/
 *.vault
 
+# Python / Virtualenv
+.venv/
+venv/
+
+# Ansible collections (installed via ansible-galaxy)
+collections/
+
 # Secrets / Vault
 # Vault-encrypted files are handled by ansible-vault skill
 # Plaintext secrets NEVER committed

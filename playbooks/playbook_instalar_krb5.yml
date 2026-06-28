@@ -1,0 +1,122 @@
+---
+# Instala krb5-workstation en un guest AISLADO vía VMware Guest Operations (offline).
+#
+# Topologia:
+#   LXANSI02T (nodo de control) -> tiene acceso al repo petersen.corp -> descarga los RPM.
+#   Guest aislado -> alcanzable SOLO via vCenter/VMware Tools, sin red propia al repo.
+#
+# Por que offline y no "dnf install desde repo" via run_command:
+#   run_command ejecuta el proceso DENTRO del guest, usando la red DEL guest.
+#   Guest Operations es un canal de control, no un bridge de red. Un guest aislado
+#   no llega al repo, asi que dnf-desde-repo falla. La transferencia de archivos SI
+#   viaja por el canal de vCenter, por eso empujamos los RPM y los instalamos local.
+#
+# Requiere dnf-plugins-core en LXANSI02T (provee 'dnf download').
+#
+# Uso:
+#   ansible-playbook playbook_instalar_krb5_workstation.yml -e "target_vm=LXANSI02T"
+
+- name: Instalar krb5-workstation offline vía Guest Operations
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    # vCenter (puenteadas desde el vault con indirección vault_)
+    vcenter_hostname: "{{ vault_vcenter_hostname }}"
+    vcenter_username: "{{ vault_vcenter_username }}"
+    vcenter_password: "{{ vault_vcenter_password }}"
+    vcenter_datacenter: "CERRITO"
+
+    # Guest (credenciales locales del SO dentro del guest)
+    guest_user: "{{ vault_guest_user }}"
+    guest_password: "{{ vault_guest_password }}"
+
+    # Objetivo y rutas
+    target_vm: "LXANSI02T"
+    rpm_src_dir: "/home/ansible/rpms/krb5"   # RPM en el nodo de control
+    rpm_dst_dir: "/tmp/rpms/krb5"            # destino dentro del guest
+
+  tasks:
+    - name: Asegurar directorio local para los RPM (en LXANSI02T)
+      ansible.builtin.file:
+        path: "{{ rpm_src_dir }}"
+        state: directory
+        mode: "0755"
+
+    # Corre en LXANSI02T, que SI tiene acceso al repo. --resolve baja krb5-workstation
+    # mas lo que falte respecto del rpmdb local (tipicamente solo libkadm5).
+    - name: Descargar krb5-workstation + dependencias desde el repo
+      ansible.builtin.command:
+        cmd: "dnf download --resolve --destdir={{ rpm_src_dir }} krb5-workstation"
+      args:
+        creates: "{{ rpm_src_dir }}/krb5-workstation-*.rpm"
+
+    - name: Listar los RPM locales a transferir
+      ansible.builtin.find:
+        paths: "{{ rpm_src_dir }}"
+        patterns: "*.rpm"
+      register: rpm_files
+
+    - name: Fallar temprano si no hay RPM para enviar
+      ansible.builtin.assert:
+        that: rpm_files.matched > 0
+        fail_msg: "No se encontraron RPM en {{ rpm_src_dir }}. Verifica acceso al repo y dnf-plugins-core en LXANSI02T."
+
+    - name: Crear el directorio destino dentro del guest
+      community.vmware.vmware_guest_run_command:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        datacenter: "{{ vcenter_datacenter }}"
+        vm_id: "{{ target_vm }}"
+        vm_id_type: vm_name
+        vm_username: "{{ guest_user }}"
+        vm_password: "{{ guest_password }}"
+        vm_shell: /usr/bin/mkdir
+        vm_shell_args: "-p {{ rpm_dst_dir }}"
+        wait_for_process: true
+
+    - name: Subir los RPM al guest
+      community.vmware.vmware_guest_file_operation:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        datacenter: "{{ vcenter_datacenter }}"
+        vm_id: "{{ target_vm }}"
+        vm_id_type: vm_name
+        vm_username: "{{ guest_user }}"
+        vm_password: "{{ guest_password }}"
+        copy:
+          src: "{{ item.path }}"
+          dest: "{{ rpm_dst_dir }}/{{ item.path | basename }}"
+          overwrite: true
+      loop: "{{ rpm_files.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+
+    # --disablerepo='*' es clave: instala 100% offline y NO toca metadata de repos,
+    # evitando el split-DNS (petersen.corp vs id-test.bancoune.com).
+    # Se usa bash -c para que el shell expanda el glob *.rpm y se loguea para auditar.
+    - name: Instalar krb5-workstation offline (sin tocar repos)
+      community.vmware.vmware_guest_run_command:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        datacenter: "{{ vcenter_datacenter }}"
+        vm_id: "{{ target_vm }}"
+        vm_id_type: vm_name
+        vm_username: "{{ guest_user }}"
+        vm_password: "{{ guest_password }}"
+        vm_shell: /usr/bin/bash
+        vm_shell_args: >-
+          -c "dnf -y --disablerepo='*' install {{ rpm_dst_dir }}/*.rpm
+          > /tmp/krb5_install.log 2>&1"
+        wait_for_process: true
+      register: krb5_install
+
+    - name: Reportar resultado de la instalación
+      ansible.builtin.debug:
+        msg: "Instalación krb5-workstation -> exit code {{ krb5_install.exit_code | default('?') }} (ver /tmp/krb5_install.log en el guest)"
