@@ -1,0 +1,12 @@
+---
+collections:
+  - name: community.vmware
+    version: "6.2.0"
+  - name: vmware.vmware
+    version: "2.9.0"
+  - name: community.general
+    version: "13.1.0"
+  - name: ansible.posix
+    version: "2.2.0"
+  - name: ansible.utils
+    version: "6.0.3"

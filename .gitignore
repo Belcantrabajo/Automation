@@ -8,7 +8,7 @@
 venv/
 
 # Ansible collections (installed via ansible-galaxy)
-collections/
+collections/ansible_collections/
 
 # Secrets / Vault
 # Vault-encrypted files are handled by ansible-vault skill
@@ -33,3 +33,4 @@ __pycache__/
 
 # Logs
 *.log
+collections/ansible_collections/

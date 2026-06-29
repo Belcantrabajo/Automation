@@ -27,6 +27,7 @@
   playbook_sellado.yml
   preflight.yml
   test_pivote.yml
+  collections/requirements.yml    # community.vmware 6.2.0, vmware.vmware 2.9.0, etc
 
 ~/ansible-legacy/         # Stack legacy (RHEL 7.9)
   .venv/                  # Python 3.12, ansible-core 2.16.19
@@ -35,6 +36,7 @@
   group_vars/
     rhel7.yml             # ansible_python_interpreter: /usr/bin/python3
   inventory/hosts.yml
+  collections/legacy/requirements.yml  # community.general 8.6.11, ansible.posix 1.6.2, etc
   .vault_pass_legacy      # openssl rand -base64 48
 ```
 
