@@ -40,7 +40,32 @@
   .vault_pass_legacy      # openssl rand -base64 48
 ```
 
+## Local Aliases (~/.bashrc)
+
+```bash
+alias venv-core='source ~/Automation/.venv/bin/activate && echo "✅ Ansible Core 2.19.11 activado"'
+alias venv-legacy='source ~/ansible-legacy/.venv/bin/activate && echo "✅ Ansible Legacy 2.16.19 activado"'
+```
+
 ## Usage
+
+### Local (Hermes host)
+
+```bash
+# Moderno — desde ~/Automation
+cd ~/Automation && ~/Automation/.venv/bin/ansible-playbook playbooks/site.yml
+# o con alias
+venv-core
+ansible-playbook -i inventory/ playbooks/site.yml
+
+# Legacy — desde ~/ansible-legacy
+cd ~/ansible-legacy && ~/ansible-legacy/.venv/bin/ansible-playbook -l rhel7 playbooks/site.yml
+# o con alias
+venv-legacy
+ansible-playbook -i inventory/hosts.yml playbooks/site.yml
+```
+
+### VM (172.30.10.118)
 
 ```bash
 # Moderno (sin activar venv)

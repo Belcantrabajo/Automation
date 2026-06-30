@@ -1,0 +1,5 @@
+vault_vcenter_hostname: '10.25.12.50'
+vault_vcenter_username: 'petersen\coviedo'
+vault_vcenter_password: 'Mihawk.green161988'
+vault_guest_user: 'coviedo'
+vault_guest_password: 'Missfortune161988'

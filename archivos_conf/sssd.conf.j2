@@ -1,0 +1,19 @@
+[sssd]
+domains = id-test.bancoune.com
+config_file_version = 2
+services = nss, pam
+
+[domain/id-test.bancoune.com]
+id_provider = ad
+auth_provider = ad
+access_provider = ad
+ad_domain = id-test.bancoune.com
+krb5_realm = ID-TEST.BANCOUNE.COM
+realmd_tags = manages-system joined-with-adcli
+cache_credentials = true
+krb5_store_password_if_offline = true
+default_shell = /bin/bash
+fallback_homedir = /home/%u@%d
+use_fully_qualified_names = False
+ldap_id_mapping = true
+ad_gpo_access_control = permissive

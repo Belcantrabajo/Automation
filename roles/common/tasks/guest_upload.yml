@@ -1,0 +1,35 @@
+---
+# Sube un archivo del pivote a una VM vía Guest Operations (sin red en la guest).
+# Parámetros:
+#   go_vm         -> nombre de la VM en vCenter            (obligatorio)
+#   go_src        -> ruta del archivo en el pivote         (obligatorio)
+#   go_dest       -> ruta destino dentro de la guest       (obligatorio)
+#   go_datacenter -> datacenter (opcional, default: vcenter_datacenter)
+#   go_overwrite  -> pisar si existe (opcional, default: true)
+
+- name: "Validar parámetros de upload"
+  ansible.builtin.assert:
+    that:
+      - go_vm is defined and go_vm | length > 0
+      - go_src is defined and go_src | length > 0
+      - go_dest is defined and go_dest | length > 0
+    fail_msg: "Faltan parámetros: go_vm, go_src y go_dest son obligatorios."
+    quiet: true
+
+- name: "Subir {{ go_src }} -> {{ go_vm }}:{{ go_dest }}"
+  community.vmware.vmware_guest_file_operation:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: false
+    datacenter: "{{ go_datacenter | default(vcenter_datacenter) }}"
+    vm_id: "{{ go_vm }}"
+    vm_id_type: vm_name
+    vm_username: "{{ guest_user }}"
+    vm_password: "{{ guest_password }}"
+    copy:
+      src: "{{ go_src }}"
+      dest: "{{ go_dest }}"
+      overwrite: "{{ go_overwrite | default(true) }}"
+  delegate_to: localhost
+  no_log: True

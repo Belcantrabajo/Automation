@@ -1,0 +1,16 @@
+# mover_archivos.yml - Para mover data entre vcenters!!
+# Usen este comando para que la variable pueda cargar distintos servers de destino y origen: EJ: ansible-playbook mover_archivos.yml -e vm=SRVAPP01 -e src=/home/ansible/payloads/krb5.conf -e dest=/tmp/krb5.conf
+
+- name: Mover archivos hacia/desde una VM vía Guest Operations
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - /home/hermes/Automation/vault/credentials.yml
+    - vars/vcenter_vars.yml
+  tasks:
+    - name: Subir archivo a la VM
+      ansible.builtin.include_tasks: /home/hermes/Automation/roles/common/tasks/guest_upload.yml
+      vars:
+        go_vm: "{{ vm }}"
+        go_src: "{{ src }}"
+        go_dest: "{{ dest }}"

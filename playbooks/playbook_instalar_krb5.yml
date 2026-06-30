@@ -1,42 +1,70 @@
 ---
-# Instala krb5-workstation en un guest AISLADO vía VMware Guest Operations (offline).
+# Instala krb5-workstation en un guest AISLADO via VMware Guest Operations (offline).
 #
 # Topologia:
 #   LXANSI02T (nodo de control) -> tiene acceso al repo petersen.corp -> descarga los RPM.
 #   Guest aislado -> alcanzable SOLO via vCenter/VMware Tools, sin red propia al repo.
 #
-# Por que offline y no "dnf install desde repo" via run_command:
-#   run_command ejecuta el proceso DENTRO del guest, usando la red DEL guest.
+# Por que offline y no "dnf install desde repo":
+#   vmware_vm_shell ejecuta el proceso DENTRO del guest, usando la red DEL guest.
 #   Guest Operations es un canal de control, no un bridge de red. Un guest aislado
 #   no llega al repo, asi que dnf-desde-repo falla. La transferencia de archivos SI
 #   viaja por el canal de vCenter, por eso empujamos los RPM y los instalamos local.
 #
+# Notas de modulos (community.vmware 6.2.0):
+#   - Ejecucion en guest: community.vmware.vmware_vm_shell  (NO vmware_guest_run_command,
+#     ese nombre no existe en esta coleccion).
+#   - vmware_vm_shell hace fail_json automaticamente si el comando sale con codigo != 0,
+#     asi que ese codigo de salida ES el guard: no hace falta failed_when extra.
+#
 # Requiere dnf-plugins-core en LXANSI02T (provee 'dnf download').
 #
-# Uso:
-#   ansible-playbook playbook_instalar_krb5_workstation.yml -e "target_vm=LXANSI02T"
+# target_vm es OBLIGATORIO: se pasa siempre por extra-vars y debe coincidir EXACTO con
+# el nombre de display de la VM en el inventario de vCenter (NO el hostname del SO).
+#   ansible-playbook playbook_instalar_krb5_workstation.yml -e "target_vm=<nombre_vcenter>"
+# A proposito sin default: si no se pasa, el play falla ruidosamente en la 1ra tarea,
+# evitando operar por error sobre el equipo equivocado (p.ej. el propio nodo de control).
 
-- name: Instalar krb5-workstation offline vía Guest Operations
+- name: Instalar krb5-workstation offline via Guest Operations
   hosts: localhost
   gather_facts: false
 
+  vars_files:
+    # Carga las credenciales cifradas (vault_vcenter_* y vault_guest_*).
+    # Ruta anclada a playbook_dir para que no dependa del cwd.
+    - "{{ playbook_dir }}/../vault/credentials.yml"
+
   vars:
-    # vCenter (puenteadas desde el vault con indirección vault_)
     vcenter_hostname: "{{ vault_vcenter_hostname }}"
     vcenter_username: "{{ vault_vcenter_username }}"
     vcenter_password: "{{ vault_vcenter_password }}"
     vcenter_datacenter: "CERRITO"
 
-    # Guest (credenciales locales del SO dentro del guest)
     guest_user: "{{ vault_guest_user }}"
     guest_password: "{{ vault_guest_password }}"
 
-    # Objetivo y rutas
-    target_vm: "LXANSI02T"
-    rpm_src_dir: "/home/ansible/rpms/krb5"   # RPM en el nodo de control
+    # target_vm: SIN default a proposito. Se exige por -e (ver assert en la 1ra tarea).
+
+    rpm_src_dir: "/home/ansible/rpms/krb5"   # RPM en el nodo de control (LXANSI02T)
     rpm_dst_dir: "/tmp/rpms/krb5"            # destino dentro del guest
 
+    # GNU timeout interno mata el dnf colgado (sale 124 -> el modulo hace fail_json).
+    # El timeout del modulo es la red de seguridad y debe ser MAYOR que el interno.
+    install_timeout: 600
+    module_timeout: 720
+
   tasks:
+    - name: Exigir target_vm (sin default; debe pasarse por -e)
+      ansible.builtin.assert:
+        that:
+          - target_vm is defined
+          - target_vm | default('') | length > 0
+        fail_msg: >-
+          Falta target_vm. Pasalo con: -e "target_vm=<nombre_de_la_VM_en_vCenter>"
+          (nombre de display del objeto VM en el datacenter CERRITO, NO el hostname del SO).
+        success_msg: "target_vm = {{ target_vm | default('') }} -> operando sobre esa VM."
+        quiet: true
+
     - name: Asegurar directorio local para los RPM (en LXANSI02T)
       ansible.builtin.file:
         path: "{{ rpm_src_dir }}"
@@ -63,7 +91,7 @@
         fail_msg: "No se encontraron RPM en {{ rpm_src_dir }}. Verifica acceso al repo y dnf-plugins-core en LXANSI02T."
 
     - name: Crear el directorio destino dentro del guest
-      community.vmware.vmware_guest_run_command:
+      community.vmware.vmware_vm_shell:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
@@ -76,6 +104,7 @@
         vm_shell: /usr/bin/mkdir
         vm_shell_args: "-p {{ rpm_dst_dir }}"
         wait_for_process: true
+        timeout: 120
 
     - name: Subir los RPM al guest
       community.vmware.vmware_guest_file_operation:
@@ -96,11 +125,12 @@
       loop_control:
         label: "{{ item.path | basename }}"
 
-    # --disablerepo='*' es clave: instala 100% offline y NO toca metadata de repos,
-    # evitando el split-DNS (petersen.corp vs id-test.bancoune.com).
-    # Se usa bash -c para que el shell expanda el glob *.rpm y se loguea para auditar.
-    - name: Instalar krb5-workstation offline (sin tocar repos)
-      community.vmware.vmware_guest_run_command:
+    # --disablerepo='*' -> 100% offline, no toca metadata de repos (evita split-DNS).
+    # sudo escala a root (dnf lo exige); orden 'sudo timeout dnf' deja el guard de
+    # timeout adentro, corriendo como root. GNU timeout mata el dnf si se cuelga (124).
+    # Requiere que el guest_user tenga sudo NOPASSWD para timeout/dnf (ver sudoers).
+    - name: Instalar krb5-workstation offline (root via sudo, con guard de timeout)
+      community.vmware.vmware_vm_shell:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
@@ -112,11 +142,50 @@
         vm_password: "{{ guest_password }}"
         vm_shell: /usr/bin/bash
         vm_shell_args: >-
-          -c "dnf -y --disablerepo='*' install {{ rpm_dst_dir }}/*.rpm
-          > /tmp/krb5_install.log 2>&1"
+          -c "sudo timeout {{ install_timeout }} dnf -y --disablerepo='*'
+          install {{ rpm_dst_dir }}/*.rpm > /tmp/krb5_install.log 2>&1"
         wait_for_process: true
-      register: krb5_install
+        timeout: "{{ module_timeout }}"
 
-    - name: Reportar resultado de la instalación
+    # Verificacion post-instalacion: paquete presente Y binarios en PATH (kinit/klist).
+    # El grupo { ...; } redirige toda la cadena al log. Si algo falla, exit != 0 -> el
+    # modulo hace fail_json y corta el playbook ANTES del cleanup (deja todo para debug).
+    - name: Verificar instalacion dentro del guest
+      community.vmware.vmware_vm_shell:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        datacenter: "{{ vcenter_datacenter }}"
+        vm_id: "{{ target_vm }}"
+        vm_id_type: vm_name
+        vm_username: "{{ guest_user }}"
+        vm_password: "{{ guest_password }}"
+        vm_shell: /usr/bin/bash
+        vm_shell_args: >-
+          -c "{ rpm -q krb5-workstation && command -v kinit && command -v klist ; }
+          > /tmp/krb5_verify.log 2>&1"
+        wait_for_process: true
+        timeout: 120
+      register: krb5_verify
+
+    - name: Reportar verificacion OK
       ansible.builtin.debug:
-        msg: "Instalación krb5-workstation -> exit code {{ krb5_install.exit_code | default('?') }} (ver /tmp/krb5_install.log en el guest)"
+        msg: "krb5-workstation instalado y verificado en {{ target_vm }} (exit {{ krb5_verify.exit_code }})"
+
+    # Solo se llega aca si install y verify pasaron (ambos cortan el play si fallan).
+    - name: Limpiar los RPM transferidos al guest
+      community.vmware.vmware_vm_shell:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        datacenter: "{{ vcenter_datacenter }}"
+        vm_id: "{{ target_vm }}"
+        vm_id_type: vm_name
+        vm_username: "{{ guest_user }}"
+        vm_password: "{{ guest_password }}"
+        vm_shell: /usr/bin/rm
+        vm_shell_args: "-rf {{ rpm_dst_dir }}"
+        wait_for_process: true
+        timeout: 120
